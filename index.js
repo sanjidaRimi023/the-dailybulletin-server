@@ -2,6 +2,7 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
+const Stripe = require('stripe');
 const { MongoClient, ServerApiVersion } = require("mongodb");
 
 
@@ -9,6 +10,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 const port = process.env.PORT || 5000;
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 
 const client = new MongoClient(process.env.MONGODB_URI, {
@@ -41,7 +43,7 @@ async function run() {
     const ArticleCollection = db.collection("article");
     const userCollection = db.collection("users");
 
-
+// user section 
      app.get("/users", async (req, res) => {
       try {
         const result = await userCollection.find().toArray();
@@ -50,8 +52,34 @@ async function run() {
         console.error("Error fetching publishers:", err);
         res.status(500).send({ error: "Failed to fetch publishers" });
       }
+     });
+    
+    
+    app.post("/users", async (req, res) => {
+      const email = req.body.email;
+      const userExists = await userCollection.findOne({ email });
+      if (userExists) {
+        await userCollection.updateOne(
+          { email },
+          {
+            $set: {
+              lastLogin: new Date().toISOString(),
+            },
+          }
+        );
+        return res.status(200).json({
+          message: "User already exists",
+          user: { ...userExists, lastLogin: new Date() },
+          inserted: false,
+        });
+      }
+      const newUser = req.body;
+      const result = await userCollection.insertOne(newUser);
+      res.send(result);
     });
 
+
+    // article section
     app.get("/article", async (req, res) => {
       try {
         const result = await ArticleCollection.find(
@@ -87,28 +115,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/users", async (req, res) => {
-      const email = req.body.email;
-      const userExists = await userCollection.findOne({ email });
-      if (userExists) {
-        await userCollection.updateOne(
-          { email },
-          {
-            $set: {
-              lastLogin: new Date().toISOString(),
-            },
-          }
-        );
-        return res.status(200).json({
-          message: "User already exists",
-          user: { ...existingUser, lastLogin: new Date() },
-          inserted: false,
-        });
-      }
-      const newUser = req.body;
-      const result = await userCollection.insertOne(newUser);
-      res.send(result);
-    });
+    // jwt section
 
     app.post("/jwt", (req, res) => {
       const { email } = req.body;
@@ -119,6 +126,19 @@ async function run() {
         expiresIn: "7d",
       })
       res.send({token})
+    })
+    
+    // payment section 
+    app.post("/payment/create-payment-intent",async (req, res) => {
+      const { price } = res.body;
+      const paymentIntent = await stripe.paymentIntents.create(
+        {
+          amount: price * 100,
+          currency: "usd",
+          payment_method_types: ["card"]
+        }
+      )
+      res.send({clientSecret: paymentIntent.client_secret})
     })
 
 
