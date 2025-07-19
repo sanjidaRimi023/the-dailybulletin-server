@@ -55,7 +55,6 @@ async function run() {
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email });
-
       if (user) {
         return res.send({
           role: user.role,
@@ -102,6 +101,32 @@ async function run() {
       }
     });
 
+    // app.get("/article", async (req, res) => {
+    //   try {
+    //     const articles = await ArticleCollection.aggregate([
+    //       {
+    //         $sort: { createdAt: -1 }, // latest first
+    //       },
+    //       {
+    //         $group: {
+    //           _id: "$category",
+    //           latestArticle: { $first: "$$ROOT" },
+    //         },
+    //       },
+    //       {
+    //         $replaceRoot: { newRoot: "$latestArticle" },
+    //       },
+    //       {
+    //         $limit: 6,
+    //       },
+    //     ]);
+
+    //     res.status(200).json(articles);
+    //   } catch (err) {
+    //     res.status(500).json({ message: "Error fetching articles" });
+    //   }
+    // });
+
     app.get("/article/my-article", verifyJWT, async (req, res) => {
       const email = req.query.email;
       const tokenEmail = req.user.email;
@@ -116,6 +141,9 @@ async function run() {
 
     app.post("/article", verifyJWT, async (req, res) => {
       const articleData = req.body;
+      if (!articleData.status) {
+        articleData.status = "pending";
+      }
       const result = await ArticleCollection.insertOne(articleData);
       res.send(result);
     });
@@ -134,13 +162,22 @@ async function run() {
 
     // payment section
     app.post("/payment/create-payment-intent", async (req, res) => {
-      const { price } = res.body;
+      const { amount } = req.body;
       const paymentIntent = await stripe.paymentIntents.create({
-        amount: price * 100,
+        amount: amount * 100,
         currency: "usd",
         payment_method_types: ["card"],
       });
       res.send({ clientSecret: paymentIntent.client_secret });
+    });
+    // update user premium
+    app.patch("/users/subscribe/:email", async (req, res) => {
+      const email = req.params.email;
+      const result = await userCollection.updateOne(
+        { email },
+        { $set: { role: "premium" } }
+      );
+      res.send(result);
     });
 
     await client.db("admin").command({ ping: 1 });
