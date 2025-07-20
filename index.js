@@ -40,6 +40,7 @@ async function run() {
     const db = client.db("NewDB");
     const ArticleCollection = db.collection("article");
     const userCollection = db.collection("users");
+    const publisherCollection = db.collection("publisher");
 
     // users section
     app.get("/users", async (req, res) => {
@@ -148,6 +149,44 @@ async function run() {
       res.send(result);
     });
 
+    // publisher
+    app.post("/publishers", async (req, res) => {
+      try {
+        const { name, image } = req.body;
+
+        if (!name || !image) {
+          return res
+            .status(400)
+            .send({ message: "Name and image are required" });
+        }
+
+        const newPublisher = {
+          name,
+          image,
+          createdAt: new Date(),
+        };
+
+        const result = await publisherCollection.insertOne(newPublisher);
+       res.send(result)
+      } catch (err) {
+        console.error("Error adding publisher:", err);
+        res.status(500).send({ message: "Failed to add publisher" });
+      }
+    });
+    app.get("/publishers", async (req, res) => {
+      try {
+        const publisherInfo = await publisherCollection.find().toArray();
+        res.status(200).send({
+          success: true,
+          data: publisherInfo,
+        });
+      } catch (err) {
+        console.error("Error fetching publishers:", err);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to fetch publishers" });
+      }
+    });
     // jwt section
     app.post("/jwt", (req, res) => {
       const { email } = req.body;
