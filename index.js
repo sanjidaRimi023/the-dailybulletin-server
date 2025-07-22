@@ -3,10 +3,16 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 const Stripe = require("stripe");
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
-app.use(cors());
+// app.use(cors());
+
+app.use(cors({
+  origin: ["http://localhost:5173"],
+  credentials: true,
+}));
+
 app.use(express.json());
 const port = process.env.PORT || 5000;
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -88,6 +94,14 @@ async function run() {
       const result = await userCollection.insertOne(newUser);
       res.send(result);
     });
+    app.delete("/users/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const result = await userCollection.deleteOne(query);
+      res.send(result);
+    });
+
+
 
     // article section
     app.get("/article", async (req, res) => {
@@ -102,32 +116,6 @@ async function run() {
       }
     });
 
-    // app.get("/article", async (req, res) => {
-    //   try {
-    //     const articles = await ArticleCollection.aggregate([
-    //       {
-    //         $sort: { createdAt: -1 }, // latest first
-    //       },
-    //       {
-    //         $group: {
-    //           _id: "$category",
-    //           latestArticle: { $first: "$$ROOT" },
-    //         },
-    //       },
-    //       {
-    //         $replaceRoot: { newRoot: "$latestArticle" },
-    //       },
-    //       {
-    //         $limit: 6,
-    //       },
-    //     ]);
-
-    //     res.status(200).json(articles);
-    //   } catch (err) {
-    //     res.status(500).json({ message: "Error fetching articles" });
-    //   }
-    // });
-
     app.get("/article/my-article", verifyJWT, async (req, res) => {
       const email = req.query.email;
       const tokenEmail = req.user.email;
@@ -140,7 +128,7 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/article", verifyJWT, async (req, res) => {
+    app.post("/article", async (req, res) => {
       const articleData = req.body;
       if (!articleData.status) {
         articleData.status = "pending";
@@ -167,7 +155,7 @@ async function run() {
         };
 
         const result = await publisherCollection.insertOne(newPublisher);
-       res.send(result)
+        res.send(result);
       } catch (err) {
         console.error("Error adding publisher:", err);
         res.status(500).send({ message: "Failed to add publisher" });
@@ -176,10 +164,7 @@ async function run() {
     app.get("/publishers", async (req, res) => {
       try {
         const publisherInfo = await publisherCollection.find().toArray();
-        res.status(200).send({
-          success: true,
-          data: publisherInfo,
-        });
+        res.send(publisherInfo);
       } catch (err) {
         console.error("Error fetching publishers:", err);
         res
@@ -187,6 +172,26 @@ async function run() {
           .send({ success: false, message: "Failed to fetch publishers" });
       }
     });
+  
+    app.delete("/publishers/:id",verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const result = await publisherCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
+  
+  
+    app.put("/publishers/:id",verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const updated = req.body;
+      const result = await publisherCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updated }
+      );
+      res.send(result);
+    });
+
     // jwt section
     app.post("/jwt", (req, res) => {
       const { email } = req.body;
