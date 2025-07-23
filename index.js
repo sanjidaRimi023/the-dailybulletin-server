@@ -105,7 +105,7 @@ async function run() {
     app.get("/article", async (req, res) => {
       try {
         const result = await ArticleCollection.find({
-          status: "pending", //after create admin role -- status "accepted"
+          status: "pending", 
         }).toArray();
         res.send(result);
       } catch (err) {
