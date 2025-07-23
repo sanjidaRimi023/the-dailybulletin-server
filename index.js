@@ -72,6 +72,45 @@ async function run() {
       }
     });
 
+    app.get("/article/user-stats/:email", verifyJWT, async (req, res) => {
+      const email = req.params.email;
+      const tokenEmail = req.user.email;
+
+      if (email !== tokenEmail) {
+        return res.status(403).send({ message: "Forbidden access" });
+      }
+
+      try {
+        const total = await ArticleCollection.countDocuments({
+          authorEmail: email,
+        });
+        const approved = await ArticleCollection.countDocuments({
+          authorEmail: email,
+          status: "approved",
+        });
+        const pending = await ArticleCollection.countDocuments({
+          authorEmail: email,
+          status: "pending",
+        });
+        const rejected = await ArticleCollection.countDocuments({
+          authorEmail: email,
+          status: "rejected",
+        });
+
+        const totalViewsData = await ArticleCollection.aggregate([
+          { $match: { authorEmail: email } },
+          { $group: { _id: null, views: { $sum: "$views" } } },
+        ]);
+
+        const totalViews = totalViewsData[0]?.views || 0;
+
+        res.send({ total, approved, pending, rejected, totalViews });
+      } catch (err) {
+        console.error("Error fetching user stats:", err);
+        res.status(500).send({ error: "Failed to fetch stats" });
+      }
+    });
+
     app.post("/users", async (req, res) => {
       const email = req.body.email;
       const userExists = await userCollection.findOne({ email });
@@ -100,13 +139,12 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
-    
 
     // article section
     app.get("/article", async (req, res) => {
       try {
         const result = await ArticleCollection.find({
-          status: "pending", 
+          status: "pending",
         }).toArray();
         res.send(result);
       } catch (err) {
@@ -158,12 +196,26 @@ async function run() {
         res.status(500).send({ error: "Failed to update article status" });
       }
     });
-    app.delete("/article/:id", verifyJWT, async (req, res) => {
-  const id = req.params.id;
-  const result = await ArticleCollection.deleteOne({ _id: new ObjectId(id) });
-  res.send(result);
-});
 
+    app.put("/article/:id", async (req, res) => {
+      const { id } = req.params;
+      const updateData = req.body;
+
+      const result = await ArticleCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      );
+
+      res.send(result);
+    });
+
+    app.delete("/article/:id", verifyJWT, async (req, res) => {
+      const id = req.params.id;
+      const result = await ArticleCollection.deleteOne({
+        _id: new ObjectId(id),
+      });
+      res.send(result);
+    });
 
     // publisher
     app.post("/publishers", async (req, res) => {
