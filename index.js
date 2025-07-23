@@ -100,6 +100,7 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
+    
 
     // article section
     app.get("/article", async (req, res) => {
@@ -157,6 +158,12 @@ async function run() {
         res.status(500).send({ error: "Failed to update article status" });
       }
     });
+    app.delete("/article/:id", verifyJWT, async (req, res) => {
+  const id = req.params.id;
+  const result = await ArticleCollection.deleteOne({ _id: new ObjectId(id) });
+  res.send(result);
+});
+
 
     // publisher
     app.post("/publishers", async (req, res) => {
