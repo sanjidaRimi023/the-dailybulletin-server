@@ -44,10 +44,33 @@ async function run() {
   try {
     await client.connect();
     const db = client.db("NewDB");
-    const ArticleCollection = db.collection("article");
+    const articleCollection = db.collection("article");
     const userCollection = db.collection("users");
     const publisherCollection = db.collection("publisher");
+    const paymentCollection = db.collection("payments");
 
+    // jwt section
+    app.post("/jwt", (req, res) => {
+      const { email } = req.body;
+      if (!email) {
+        return res.status(400).send({ message: "Email is required" });
+      }
+      const token = jwt.sign({ email }, process.env.JWT_SECRET_KEY, {
+        expiresIn: "7d",
+      });
+      res.send({ token });
+    });
+
+    //  verify admin section
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { email };
+      const user = await userCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
     // users section
     app.get("/users", async (req, res) => {
       try {
@@ -58,15 +81,20 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch publishers" });
       }
     });
-
+    // get user role by email
+    app.get("/user/role", verifyJWT, async (req, res) => {
+      const email = req.query.email;
+      const user = await userCollection.findOne({ email });
+      res.send({
+        email: user.email,
+        role: user.role,
+      });
+    });
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
       const user = await userCollection.findOne({ email });
       if (user) {
-        return res.send({
-          role: user.role,
-          userType: user.userType,
-        });
+        return res.send(user);
       } else {
         return res.status(404).send({ message: "User not found" });
       }
@@ -81,23 +109,23 @@ async function run() {
       }
 
       try {
-        const total = await ArticleCollection.countDocuments({
+        const total = await articleCollection.countDocuments({
           authorEmail: email,
         });
-        const approved = await ArticleCollection.countDocuments({
+        const approved = await articleCollection.countDocuments({
           authorEmail: email,
           status: "approved",
         });
-        const pending = await ArticleCollection.countDocuments({
+        const pending = await articleCollection.countDocuments({
           authorEmail: email,
           status: "pending",
         });
-        const rejected = await ArticleCollection.countDocuments({
+        const rejected = await articleCollection.countDocuments({
           authorEmail: email,
           status: "rejected",
         });
 
-        const totalViewsData = await ArticleCollection.aggregate([
+        const totalViewsData = await articleCollection.aggregate([
           { $match: { authorEmail: email } },
           { $group: { _id: null, views: { $sum: "$views" } } },
         ]);
@@ -117,11 +145,7 @@ async function run() {
       if (userExists) {
         await userCollection.updateOne(
           { email },
-          {
-            $set: {
-              lastLogin: new Date().toISOString(),
-            },
-          }
+          { $set: { lastLogin: new Date() } }
         );
         return res.status(200).json({
           message: "User already exists",
@@ -129,23 +153,60 @@ async function run() {
           inserted: false,
         });
       }
-      const newUser = req.body;
+      const newUser = { ...req.body, createdAt: new Date() };
       const result = await userCollection.insertOne(newUser);
       res.send(result);
     });
-    app.delete("/users/:id", async (req, res) => {
+
+    app.delete("/users/:id", verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
 
+    app.patch("/users/:id", async (req, res) => {
+      try {
+        const userEmail = req.params.id;
+        const { displayName, bio, photoURL } = req.body;
+        const updateDoc = {
+          ...(displayName && { displayName }),
+          ...(bio && { bio }),
+          ...(photoURL && { photoURL }),
+          last_login: new Date().toISOString(),
+        };
+
+        const result = await userCollection.findOneAndUpdate(
+          { email: userEmail },
+          { $set: updateDoc },
+          { returnDocument: "after" }
+        );
+
+        if (!result.value) {
+          return res
+            .status(404)
+            .send({ success: false, message: "User not found" });
+        }
+
+        res.send({
+          success: true,
+          message: "Profile updated successfully",
+          updatedUser: result.value,
+        });
+      } catch (err) {
+        console.error("Profile update failed:", err);
+        res.status(500).send({ success: false, message: "Server error" });
+      }
+    });
+
     // article section
     app.get("/article", async (req, res) => {
       try {
-        const result = await ArticleCollection.find({
-          status: "pending",
-        }).toArray();
+        const result = await articleCollection
+          .find({
+            status: "pending",
+          })
+          .toArray();
         res.send(result);
       } catch (err) {
         console.error("Error fetching publishers:", err);
@@ -159,9 +220,11 @@ async function run() {
       if (email !== tokenEmail) {
         return res.status(403).send({ message: "Forbidden access" });
       }
-      const result = await ArticleCollection.find({
-        authorEmail: email,
-      }).toArray();
+      const result = await articleCollection
+        .find({
+          authorEmail: email,
+        })
+        .toArray();
       res.send(result);
     });
 
@@ -170,7 +233,7 @@ async function run() {
       if (!articleData.status) {
         articleData.status = "pending";
       }
-      const result = await ArticleCollection.insertOne(articleData);
+      const result = await articleCollection.insertOne(articleData);
       res.send(result);
     });
 
@@ -183,7 +246,7 @@ async function run() {
           updateDoc.rejectionReasion = rejectionReasion;
         }
 
-        const result = await ArticleCollection.updateOne(
+        const result = await articleCollection.updateOne(
           {
             _id: new ObjectId(id),
           },
@@ -201,7 +264,7 @@ async function run() {
       const { id } = req.params;
       const updateData = req.body;
 
-      const result = await ArticleCollection.updateOne(
+      const result = await articleCollection.updateOne(
         { _id: new ObjectId(id) },
         { $set: updateData }
       );
@@ -211,14 +274,14 @@ async function run() {
 
     app.delete("/article/:id", verifyJWT, async (req, res) => {
       const id = req.params.id;
-      const result = await ArticleCollection.deleteOne({
+      const result = await articleCollection.deleteOne({
         _id: new ObjectId(id),
       });
       res.send(result);
     });
 
     // publisher
-    app.post("/publishers", async (req, res) => {
+    app.post("/publishers", verifyAdmin, async (req, res) => {
       try {
         const { name, image } = req.body;
 
@@ -253,7 +316,7 @@ async function run() {
       }
     });
 
-    app.delete("/publishers/:id", verifyJWT, async (req, res) => {
+    app.delete("/publishers/:id", verifyAdmin, verifyJWT, async (req, res) => {
       const id = req.params.id;
       const result = await publisherCollection.deleteOne({
         _id: new ObjectId(id),
@@ -261,7 +324,7 @@ async function run() {
       res.send(result);
     });
 
-    app.put("/publishers/:id", verifyJWT, async (req, res) => {
+    app.put("/publishers/:id", verifyJWT, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const updated = req.body;
       const result = await publisherCollection.updateOne(
@@ -271,37 +334,86 @@ async function run() {
       res.send(result);
     });
 
-    // jwt section
-    app.post("/jwt", (req, res) => {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).send({ message: "Email is required" });
-      }
-      const token = jwt.sign({ email }, process.env.JWT_SECRET_KEY, {
-        expiresIn: "7d",
-      });
-      res.send({ token });
-    });
-
     // payment section
     app.post("/payment/create-payment-intent", async (req, res) => {
-      const { amount } = req.body;
-      const paymentIntent = await stripe.paymentIntents.create({
-        amount: amount * 100,
-        currency: "usd",
-        payment_method_types: ["card"],
-      });
-      res.send({ clientSecret: paymentIntent.client_secret });
+      const { price } = req.body; 
+      if (!price || price <= 0) {
+        return res.status(400).send({ error: "Invalid price" });
+      }
+      const amountInCents = Math.round(price * 100);
+
+      try {
+        const paymentIntent = await stripe.paymentIntents.create({
+          amount: amountInCents,
+          currency: "usd",
+          payment_method_types: ["card"],
+        });
+        res.send({ clientSecret: paymentIntent.client_secret });
+      } catch (error) {
+        res.status(500).send({ error: error.message });
+      }
     });
     // update user premium
-    app.patch("/users/subscribe/:email", async (req, res) => {
-      const email = req.params.email;
-      const result = await userCollection.updateOne(
-        { email },
-        { $set: { role: "premium" } }
-      );
-      res.send(result);
+
+   app.patch("/users/subscribe", verifyJWT, async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    const { durationMinutes, planName, price, transactionId } = req.body;
+
+    // ১. লগ করে দেখুন সঠিক ইমেইল আসছে কিনা
+    console.log("Attempting to subscribe user with email:", userEmail);
+
+    if (!userEmail || !durationMinutes) {
+      return res
+        .status(400)
+        .json({ message: "User email and duration are required." });
+    }
+
+    const premiumExpiresAt = new Date(
+      Date.now() + durationMinutes * 60 * 1000
+    );
+
+    const filter = { email: userEmail };
+    const updateDoc = {
+      $set: {
+        isPremium: true,
+        premiumTakenAt: new Date(),
+        premiumExpiresAt: premiumExpiresAt,
+        currentPlan: planName,
+      },
+    };
+
+    const result = await userCollection.updateOne(filter, updateDoc);
+
+    // ২. লগ করে দেখুন ডাটাবেজ অপারেশনের ফলাফল কি
+    console.log("MongoDB update result:", result);
+
+    if (result.modifiedCount === 0) {
+      // ৩. যদি কোনো ডকুমেন্ট আপডেট না হয়, তাহলে এখানে একটি সুনির্দিষ্ট লগ যোগ করুন
+      console.error(`User with email '${userEmail}' not found in database or no update was needed.`);
+      return res
+        .status(404)
+        .json({ message: "User not found or could not be updated." });
+    }
+
+    const paymentRecord = {
+      email: userEmail,
+      price,
+      transactionId,
+      planName,
+      paymentDate: new Date(),
+    };
+    await paymentCollection.insertOne(paymentRecord);
+
+    res.status(200).json({
+      success: true,
+      message: "Subscription updated successfully!",
     });
+  } catch (error) {
+    console.error("Subscription update server error:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
 
     await client.db("admin").command({ ping: 1 });
     console.log(
