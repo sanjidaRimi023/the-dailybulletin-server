@@ -164,7 +164,65 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
+   app.patch("/users/subscribe", verifyJWT, async (req, res) => {
+  try {
+    const userEmail = req.user.email;
+    const { durationMinutes, planName, price, transactionId } = req.body;
 
+    // ১. লগ করে দেখুন সঠিক ইমেইল আসছে কিনা
+    console.log("Attempting to subscribe user with email:", userEmail);
+
+    if (!userEmail || !durationMinutes) {
+      return res
+        .status(400)
+        .json({ message: "User email and duration are required." });
+    }
+
+    const premiumExpiresAt = new Date(
+      Date.now() + durationMinutes * 60 * 1000
+    );
+
+    const filter = { email: userEmail };
+    const updateDoc = {
+      $set: {
+        isPremium: true,
+        premiumTakenAt: new Date(),
+        premiumExpiresAt: premiumExpiresAt,
+        currentPlan: planName,
+      },
+    };
+
+    const result = await userCollection.updateOne(filter, updateDoc);
+
+    // ২. লগ করে দেখুন ডাটাবেজ অপারেশনের ফলাফল কি
+    console.log("MongoDB update result:", result);
+
+    if (result.modifiedCount === 0) {
+      // ৩. যদি কোনো ডকুমেন্ট আপডেট না হয়, তাহলে এখানে একটি সুনির্দিষ্ট লগ যোগ করুন
+      console.error(`User with email '${userEmail}' not found in database or no update was needed.`);
+      return res
+        .status(404)
+        .json({ message: "User not found or could not be updated." });
+    }
+
+    const paymentRecord = {
+      email: userEmail,
+      price,
+      transactionId,
+      planName,
+      paymentDate: new Date(),
+    };
+    await paymentCollection.insertOne(paymentRecord);
+
+    res.status(200).json({
+      success: true,
+      message: "Subscription updated successfully!",
+    });
+  } catch (error) {
+    console.error("Subscription update server error:", error);
+    res.status(500).json({ message: "Internal server error." });
+  }
+});
     app.patch("/users/:id", async (req, res) => {
       try {
         const userEmail = req.params.id;
@@ -182,7 +240,7 @@ async function run() {
           { returnDocument: "after" }
         );
 
-        if (!result.value) {
+        if (!result) {
           return res
             .status(404)
             .send({ success: false, message: "User not found" });
@@ -191,7 +249,7 @@ async function run() {
         res.send({
           success: true,
           message: "Profile updated successfully",
-          updatedUser: result.value,
+          updatedUser: result,
         });
       } catch (err) {
         console.error("Profile update failed:", err);
@@ -355,65 +413,7 @@ async function run() {
     });
     // update user premium
 
-   app.patch("/users/subscribe", verifyJWT, async (req, res) => {
-  try {
-    const userEmail = req.user.email;
-    const { durationMinutes, planName, price, transactionId } = req.body;
 
-    // ১. লগ করে দেখুন সঠিক ইমেইল আসছে কিনা
-    console.log("Attempting to subscribe user with email:", userEmail);
-
-    if (!userEmail || !durationMinutes) {
-      return res
-        .status(400)
-        .json({ message: "User email and duration are required." });
-    }
-
-    const premiumExpiresAt = new Date(
-      Date.now() + durationMinutes * 60 * 1000
-    );
-
-    const filter = { email: userEmail };
-    const updateDoc = {
-      $set: {
-        isPremium: true,
-        premiumTakenAt: new Date(),
-        premiumExpiresAt: premiumExpiresAt,
-        currentPlan: planName,
-      },
-    };
-
-    const result = await userCollection.updateOne(filter, updateDoc);
-
-    // ২. লগ করে দেখুন ডাটাবেজ অপারেশনের ফলাফল কি
-    console.log("MongoDB update result:", result);
-
-    if (result.modifiedCount === 0) {
-      // ৩. যদি কোনো ডকুমেন্ট আপডেট না হয়, তাহলে এখানে একটি সুনির্দিষ্ট লগ যোগ করুন
-      console.error(`User with email '${userEmail}' not found in database or no update was needed.`);
-      return res
-        .status(404)
-        .json({ message: "User not found or could not be updated." });
-    }
-
-    const paymentRecord = {
-      email: userEmail,
-      price,
-      transactionId,
-      planName,
-      paymentDate: new Date(),
-    };
-    await paymentCollection.insertOne(paymentRecord);
-
-    res.status(200).json({
-      success: true,
-      message: "Subscription updated successfully!",
-    });
-  } catch (error) {
-    console.error("Subscription update server error:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
 
     await client.db("admin").command({ ping: 1 });
     console.log(
