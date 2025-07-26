@@ -301,6 +301,20 @@ async function run() {
       }
     });
 
+    app.patch("/article/viewcount/:id", async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await articleCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $inc: { viewCount: 1 } } // 1 kore barabe
+        );
+        res.send(result);
+      } catch (err) {
+        res
+          .status(500)
+          .send({ success: false, message: "Internal server error" });
+      }
+    });
 
     app.get("/article/my-article", verifyJWT, async (req, res) => {
       const email = req.query.email;
