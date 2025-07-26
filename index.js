@@ -71,6 +71,108 @@ async function run() {
       }
       next();
     };
+    // Admin dashboard overview route
+    app.get("/admin-stats", verifyJWT, async (req, res) => {
+
+      const email = req.user.email;
+      const user = await userCollection.findOne({ email });
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "Forbidden" });
+      }
+      try {
+        const userCount = await userCollection.countDocuments();
+        const articleCount = await articleCollection.countDocuments();
+        const approvedArticleCount = await articleCollection.countDocuments({
+          status: "approved",
+        });
+        const pendingArticleCount = await articleCollection.countDocuments({
+          status: "pending",
+        });
+
+        const viewData = await articleCollection
+          .aggregate([
+            { $match: { status: "approved" } },
+            { $group: { _id: null, totalViews: { $sum: "$viewCount" } } },
+          ])
+          .toArray();
+
+        const totalViews = viewData[0]?.totalViews || 0;
+
+        res.send({
+          users: userCount,
+          articles: articleCount,
+          approvedArticles: approvedArticleCount,
+          pendingArticles: pendingArticleCount,
+          views: totalViews,
+        });
+      } catch (error) {
+        console.error("Admin stats fetch error:", error);
+        res.status(500).send({ message: "Failed to fetch admin stats" });
+      }
+    });
+
+    // 📊 Line Chart - Article trends over past 7 days
+app.get("/admin/article-trends", verifyJWT, async (req, res) => {
+  const today = new Date();
+  const last7Days = [];
+
+  // Create array for past 7 days (newest to oldest)
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    const formatted = date.toISOString().split("T")[0]; // YYYY-MM-DD
+    last7Days.push(formatted);
+  }
+
+  const trends = await articleCollection
+    .aggregate([
+      {
+        $match: {
+          createdAt: { $gte: new Date(today.setDate(today.getDate() - 6)) }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ])
+    .toArray();
+
+  // Fill missing days with 0
+  const trendsMap = last7Days.map((day) => {
+    const found = trends.find((t) => t._id === day);
+    return {
+      date: day,
+      articles: found ? found.count : 0
+    };
+  });
+
+  res.send(trendsMap);
+});
+// 🗓️ New users and articles today
+app.get("/admin/today-stats", verifyJWT, async (req, res) => {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0); // Today at 00:00:00
+
+  const newUsers = await userCollection.countDocuments({
+    createdAt: { $gte: start }
+  });
+
+  const newArticles = await articleCollection.countDocuments({
+    createdAt: { $gte: start }
+  });
+
+  res.send({
+    todayUsers: newUsers,
+    todayArticles: newArticles
+  });
+});
+
+
     // users section
     app.get("/users", async (req, res) => {
       try {
@@ -306,7 +408,7 @@ async function run() {
       try {
         const result = await articleCollection.updateOne(
           { _id: new ObjectId(id) },
-          { $inc: { viewCount: 1 } } // 1 kore barabe
+          { $inc: { viewCount: 1 } }
         );
         res.send(result);
       } catch (err) {
@@ -330,14 +432,15 @@ async function run() {
       res.send(result);
     });
 
-    app.post("/article", async (req, res) => {
-      const articleData = req.body;
-      if (!articleData.status) {
-        articleData.status = "pending";
-      }
-      const result = await articleCollection.insertOne(articleData);
-      res.send(result);
-    });
+  app.post("/article", async (req, res) => {
+  const articleData = { ...req.body, createdAt: new Date() };
+  if (!articleData.status) {
+    articleData.status = "pending";
+  }
+  const result = await articleCollection.insertOne(articleData);
+  res.send(result);
+});
+
 
     app.patch("/article/status/:id", async (req, res) => {
       const id = req.params.id;
