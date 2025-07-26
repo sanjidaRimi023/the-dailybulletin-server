@@ -164,65 +164,64 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     });
-   app.patch("/users/subscribe", verifyJWT, async (req, res) => {
-  try {
-    const userEmail = req.user.email;
-    const { durationMinutes, planName, price, transactionId } = req.body;
+    app.patch("/users/subscribe", verifyJWT, async (req, res) => {
+      try {
+        const userEmail = req.user.email;
+        const { durationMinutes, planName, price, transactionId } = req.body;
 
-    // ১. লগ করে দেখুন সঠিক ইমেইল আসছে কিনা
-    console.log("Attempting to subscribe user with email:", userEmail);
+        console.log("Attempting to subscribe user with email:", userEmail);
 
-    if (!userEmail || !durationMinutes) {
-      return res
-        .status(400)
-        .json({ message: "User email and duration are required." });
-    }
+        if (!userEmail || !durationMinutes) {
+          return res
+            .status(400)
+            .json({ message: "User email and duration are required." });
+        }
 
-    const premiumExpiresAt = new Date(
-      Date.now() + durationMinutes * 60 * 1000
-    );
+        const premiumExpiresAt = new Date(
+          Date.now() + durationMinutes * 60 * 1000
+        );
 
-    const filter = { email: userEmail };
-    const updateDoc = {
-      $set: {
-        isPremium: true,
-        premiumTakenAt: new Date(),
-        premiumExpiresAt: premiumExpiresAt,
-        currentPlan: planName,
-      },
-    };
+        const filter = { email: userEmail };
+        const updateDoc = {
+          $set: {
+            isPremium: true,
+            premiumTakenAt: new Date(),
+            premiumExpiresAt: premiumExpiresAt,
+            currentPlan: planName,
+          },
+        };
 
-    const result = await userCollection.updateOne(filter, updateDoc);
+        const result = await userCollection.updateOne(filter, updateDoc);
 
-    // ২. লগ করে দেখুন ডাটাবেজ অপারেশনের ফলাফল কি
-    console.log("MongoDB update result:", result);
+        console.log("MongoDB update result:", result);
 
-    if (result.modifiedCount === 0) {
-      // ৩. যদি কোনো ডকুমেন্ট আপডেট না হয়, তাহলে এখানে একটি সুনির্দিষ্ট লগ যোগ করুন
-      console.error(`User with email '${userEmail}' not found in database or no update was needed.`);
-      return res
-        .status(404)
-        .json({ message: "User not found or could not be updated." });
-    }
+        if (result.modifiedCount === 0) {
+          console.error(
+            `User with email '${userEmail}' not found in database or no update was needed.`
+          );
+          return res
+            .status(404)
+            .json({ message: "User not found or could not be updated." });
+        }
 
-    const paymentRecord = {
-      email: userEmail,
-      price,
-      transactionId,
-      planName,
-      paymentDate: new Date(),
-    };
-    await paymentCollection.insertOne(paymentRecord);
+        const paymentRecord = {
+          email: userEmail,
+          price,
+          transactionId,
+          planName,
+          paymentDate: new Date(),
+        };
+        await paymentCollection.insertOne(paymentRecord);
 
-    res.status(200).json({
-      success: true,
-      message: "Subscription updated successfully!",
+        res.status(200).json({
+          success: true,
+          message: "Subscription updated successfully!",
+        });
+      } catch (error) {
+        console.error("Subscription update server error:", error);
+        res.status(500).json({ message: "Internal server error." });
+      }
     });
-  } catch (error) {
-    console.error("Subscription update server error:", error);
-    res.status(500).json({ message: "Internal server error." });
-  }
-});
     app.patch("/users/:id", async (req, res) => {
       try {
         const userEmail = req.params.id;
@@ -271,6 +270,37 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch publishers" });
       }
     });
+    app.get("/article/approved", async (req, res) => {
+      try {
+        const result = await articleCollection
+          .find({ status: "approved" })
+          .toArray();
+        res.send(result);
+      } catch (err) {
+        console.error("Error fetching approved articles:", err);
+        res.status(500).send({ error: "Failed to fetch approved articles" });
+      }
+    });
+
+    app.get("/article/:id", async (req, res) => {
+      const { id } = req.params;
+
+      try {
+        const result = await articleCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res.status(404).send({ message: "Article not found" });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error fetching article:", error);
+        res.status(500).send({ message: "Internal server error" });
+      }
+    });
+
 
     app.get("/article/my-article", verifyJWT, async (req, res) => {
       const email = req.query.email;
@@ -394,7 +424,7 @@ async function run() {
 
     // payment section
     app.post("/payment/create-payment-intent", async (req, res) => {
-      const { price } = req.body; 
+      const { price } = req.body;
       if (!price || price <= 0) {
         return res.status(400).send({ error: "Invalid price" });
       }
@@ -412,8 +442,6 @@ async function run() {
       }
     });
     // update user premium
-
-
 
     await client.db("admin").command({ ping: 1 });
     console.log(
