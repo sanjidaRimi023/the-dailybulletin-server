@@ -71,9 +71,8 @@ async function run() {
       }
       next();
     };
-    // Admin dashboard overview route
-    app.get("/admin-stats", verifyJWT, async (req, res) => {
 
+    app.get("/admin-stats", verifyJWT, async (req, res) => {
       const email = req.user.email;
       const user = await userCollection.findOne({ email });
       if (!user || user.role !== "admin") {
@@ -111,67 +110,64 @@ async function run() {
       }
     });
 
-    // 📊 Line Chart - Article trends over past 7 days
-app.get("/admin/article-trends", verifyJWT, async (req, res) => {
-  const today = new Date();
-  const last7Days = [];
+    app.get("/admin/article-trends", verifyJWT, async (req, res) => {
+      const today = new Date();
+      const last7Days = [];
 
-  // Create array for past 7 days (newest to oldest)
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date(today);
-    date.setDate(today.getDate() - i);
-    const formatted = date.toISOString().split("T")[0]; // YYYY-MM-DD
-    last7Days.push(formatted);
-  }
-
-  const trends = await articleCollection
-    .aggregate([
-      {
-        $match: {
-          createdAt: { $gte: new Date(today.setDate(today.getDate() - 6)) }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: "%Y-%m-%d", date: "$createdAt" }
-          },
-          count: { $sum: 1 }
-        }
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(today.getDate() - i);
+        const formatted = date.toISOString().split("T")[0];
+        last7Days.push(formatted);
       }
-    ])
-    .toArray();
 
-  // Fill missing days with 0
-  const trendsMap = last7Days.map((day) => {
-    const found = trends.find((t) => t._id === day);
-    return {
-      date: day,
-      articles: found ? found.count : 0
-    };
-  });
+      const trends = await articleCollection
+        .aggregate([
+          {
+            $match: {
+              createdAt: { $gte: new Date(today.setDate(today.getDate() - 6)) },
+            },
+          },
+          {
+            $group: {
+              _id: {
+                $dateToString: { format: "%Y-%m-%d", date: "$createdAt" },
+              },
+              count: { $sum: 1 },
+            },
+          },
+        ])
+        .toArray();
 
-  res.send(trendsMap);
-});
-// 🗓️ New users and articles today
-app.get("/admin/today-stats", verifyJWT, async (req, res) => {
-  const start = new Date();
-  start.setHours(0, 0, 0, 0); // Today at 00:00:00
+      // Fill missing days with 0
+      const trendsMap = last7Days.map((day) => {
+        const found = trends.find((t) => t._id === day);
+        return {
+          date: day,
+          articles: found ? found.count : 0,
+        };
+      });
 
-  const newUsers = await userCollection.countDocuments({
-    createdAt: { $gte: start }
-  });
+      res.send(trendsMap);
+    });
 
-  const newArticles = await articleCollection.countDocuments({
-    createdAt: { $gte: start }
-  });
+    app.get("/admin/today-stats", verifyJWT, async (req, res) => {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
 
-  res.send({
-    todayUsers: newUsers,
-    todayArticles: newArticles
-  });
-});
+      const newUsers = await userCollection.countDocuments({
+        createdAt: { $gte: start },
+      });
 
+      const newArticles = await articleCollection.countDocuments({
+        createdAt: { $gte: start },
+      });
+
+      res.send({
+        todayUsers: newUsers,
+        todayArticles: newArticles,
+      });
+    });
 
     // users section
     app.get("/users", async (req, res) => {
@@ -324,9 +320,9 @@ app.get("/admin/today-stats", verifyJWT, async (req, res) => {
         res.status(500).json({ message: "Internal server error." });
       }
     });
-    app.patch("/users/:id", async (req, res) => {
+    app.patch("/user/:email", async (req, res) => {
       try {
-        const userEmail = req.params.id;
+        const userEmail = req.params.email;
         const { displayName, bio, photoURL } = req.body;
         const updateDoc = {
           ...(displayName && { displayName }),
@@ -384,8 +380,13 @@ app.get("/admin/today-stats", verifyJWT, async (req, res) => {
       }
     });
 
-    app.get("/article/:id", async (req, res) => {
+    app.get("/singlearticle/:id", async (req, res) => {
       const { id } = req.params;
+      console.log(id);
+
+      if (!id) {
+        return res.status(400).send({ message: "Invalid article ID" });
+      }
 
       try {
         const result = await articleCollection.findOne({
@@ -421,6 +422,8 @@ app.get("/admin/today-stats", verifyJWT, async (req, res) => {
     app.get("/article/my-article", verifyJWT, async (req, res) => {
       const email = req.query.email;
       const tokenEmail = req.user.email;
+      console.log("Query email:", req.query.email);
+      console.log("Token email:", req.user.email);
       if (email !== tokenEmail) {
         return res.status(403).send({ message: "Forbidden access" });
       }
@@ -432,15 +435,14 @@ app.get("/admin/today-stats", verifyJWT, async (req, res) => {
       res.send(result);
     });
 
-  app.post("/article", async (req, res) => {
-  const articleData = { ...req.body, createdAt: new Date() };
-  if (!articleData.status) {
-    articleData.status = "pending";
-  }
-  const result = await articleCollection.insertOne(articleData);
-  res.send(result);
-});
-
+    app.post("/article", async (req, res) => {
+      const articleData = { ...req.body, createdAt: new Date() };
+      if (!articleData.status) {
+        articleData.status = "pending";
+      }
+      const result = await articleCollection.insertOne(articleData);
+      res.send(result);
+    });
 
     app.patch("/article/status/:id", async (req, res) => {
       const id = req.params.id;
