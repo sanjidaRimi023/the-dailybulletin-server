@@ -9,8 +9,8 @@ const app = express();
 app.use(cors());
 
 // app.use(cors({
-//   origin: ["http://localhost:5173"],
-//   credentials: true,
+//   origin: ["http://localhost:5173", "https://yourfrontend.com"],
+//   credentials: true
 // }));
 
 app.use(express.json());
@@ -63,7 +63,7 @@ async function run() {
 
     //  verify admin section
     const verifyAdmin = async (req, res, next) => {
-      const email = req.decoded.email;
+      const email = req.user.email; // ✅ Change this line
       const query = { email };
       const user = await userCollection.findOne(query);
       if (!user || user.role !== "admin") {
@@ -256,7 +256,7 @@ async function run() {
       res.send(result);
     });
 
-    app.delete("/users/:id", verifyAdmin, async (req, res) => {
+    app.delete("/user/:id", verifyJWT, async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await userCollection.deleteOne(query);
@@ -266,8 +266,6 @@ async function run() {
       try {
         const userEmail = req.user.email;
         const { durationMinutes, planName, price, transactionId } = req.body;
-
-        console.log("Attempting to subscribe user with email:", userEmail);
 
         if (!userEmail || !durationMinutes) {
           return res
@@ -290,8 +288,6 @@ async function run() {
         };
 
         const result = await userCollection.updateOne(filter, updateDoc);
-
-        console.log("MongoDB update result:", result);
 
         if (result.modifiedCount === 0) {
           console.error(
@@ -320,7 +316,7 @@ async function run() {
         res.status(500).json({ message: "Internal server error." });
       }
     });
-    app.patch("/user/:email", async (req, res) => {
+    app.patch("/user/:email", verifyJWT, async (req, res) => {
       try {
         const userEmail = req.params.email;
         const { displayName, bio, photoURL } = req.body;
@@ -488,7 +484,7 @@ async function run() {
     });
 
     // publisher
-    app.post("/publishers", verifyAdmin, async (req, res) => {
+    app.post("/publishers", verifyJWT, verifyAdmin, async (req, res) => {
       try {
         const { name, image } = req.body;
 
@@ -523,7 +519,7 @@ async function run() {
       }
     });
 
-    app.delete("/publishers/:id", verifyAdmin, verifyJWT, async (req, res) => {
+    app.delete("/publishers/:id", verifyJWT, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       const result = await publisherCollection.deleteOne({
         _id: new ObjectId(id),
