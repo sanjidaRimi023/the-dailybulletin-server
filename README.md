@@ -73,7 +73,7 @@ This project is licensed under the ISC License. See the LICENSE file for more de
 
 ---
 
-**Made with ❤️ by [Your Name](https://github.com/sanjidaRimi023)**
+**Made with ❤️ by [Sanjida Rimi](https://github.com/sanjidaRimi023)**
 
 
 
