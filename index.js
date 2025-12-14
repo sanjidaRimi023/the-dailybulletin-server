@@ -6,12 +6,12 @@ const Stripe = require("stripe");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
-app.use(cors());
+// app.use(cors());
 
-// app.use(cors({
-//   origin: ["http://localhost:5173", "https://yourfrontend.com"],
-//   credentials: true
-// }));
+app.use(cors({
+  origin: ["http://localhost:5173", "https://daily-bulletin-96f27.web.app"],
+  credentials: true
+}));
 
 app.use(express.json());
 const port = process.env.PORT || 5000;
@@ -42,7 +42,7 @@ const verifyJWT = (req, res, next) => {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
     const db = client.db("NewDB");
     const articleCollection = db.collection("article");
     const userCollection = db.collection("users");
@@ -63,7 +63,7 @@ async function run() {
 
     //  verify admin section
     const verifyAdmin = async (req, res, next) => {
-      const email = req.user.email; // ✅ Change this line
+      const email = req.user.email;
       const query = { email };
       const user = await userCollection.findOne(query);
       if (!user || user.role !== "admin") {
