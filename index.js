@@ -8,10 +8,12 @@ const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const app = express();
 // app.use(cors());
 
-app.use(cors({
-  origin: ["http://localhost:5173", "https://daily-bulletin-96f27.web.app"],
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:5173", "https://daily-bulletin-96f27.web.app"],
+    credentials: true,
+  })
+);
 
 app.use(express.json());
 const port = process.env.PORT || 5000;
@@ -42,7 +44,7 @@ const verifyJWT = (req, res, next) => {
 
 async function run() {
   try {
-    // await client.connect();
+    await client.connect();
     const db = client.db("NewDB");
     const articleCollection = db.collection("article");
     const userCollection = db.collection("users");
@@ -190,6 +192,7 @@ async function run() {
     });
     app.get("/users/:email", async (req, res) => {
       const email = req.params.email;
+      console.log("user email.", email);
       const user = await userCollection.findOne({ email });
       if (user) {
         return res.send(user);
@@ -236,24 +239,32 @@ async function run() {
         res.status(500).send({ error: "Failed to fetch stats" });
       }
     });
-
     app.post("/users", async (req, res) => {
-      const email = req.body.email;
-      const userExists = await userCollection.findOne({ email });
-      if (userExists) {
-        await userCollection.updateOne(
-          { email },
-          { $set: { lastLogin: new Date() } }
+      try {
+        const user = req.body;
+        const query = { email: user.email };
+
+        const options = { upsert: true };
+        const updateDoc = {
+          $set: {
+            ...user,
+            lastLogin: new Date(),
+          },
+          $setOnInsert: {
+            createdAt: new Date(), 
+          },
+        };
+
+        const result = await userCollection.updateOne(
+          query,
+          updateDoc,
+          options
         );
-        return res.status(200).json({
-          message: "User already exists",
-          user: { ...userExists, lastLogin: new Date() },
-          inserted: false,
-        });
+        res.status(200).send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Internal Server Error" });
       }
-      const newUser = { ...req.body, createdAt: new Date() };
-      const result = await userCollection.insertOne(newUser);
-      res.send(result);
     });
 
     app.delete("/user/:id", verifyJWT, async (req, res) => {
